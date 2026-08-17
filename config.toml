@@ -1,0 +1,653 @@
+# EVM Arbitrage Scanner — public production scanner configuration.
+# READ-ONLY: RPC reads, local math, exact quote calls, local cache/SQLite persistence.
+# This binary does not contain transaction signing, private-key handling, relay submission,
+# public-mempool submission, deployment, or trade execution code.
+#
+# RPC endpoints are loaded from environment variables; never put provider secrets here.
+# Default enabled set: Arbitrum, Base, Optimism. Tier-3 chains remain configured but disabled
+# because the final six-hour benchmark found little useful breadth there and poor zkSync RPC health.
+
+summary_interval_secs = 60
+top_candidates = 40
+min_trade_usd = 10.0
+max_trade_usd = 100000.0
+min_pool_anchor_liquidity_usd = 10000.0
+exact_quote_budget_per_scan = 30
+max_cycles_per_depth = 250000
+sizing_grid_points = 6
+sizing_refine_iterations = 1
+multicall3_address = "0xcA11bde05977b3631167028862bE2a173976CA11"
+multicall_max_calls = 80
+output_dir = "data/scanner"
+artifact_prefix = "scanner"
+analytical_sizing_enabled = true
+analytical_sizing_iterations = 28
+analytical_validation_band_pct = 3.0
+
+# -----------------------------------------------------------------------------
+# Tier 1 — Arbitrum One
+# Existing V3.2.2 coverage preserved: Uni V2/V3, Sushi V2, Pancake V2/V3,
+# Camelot Algebra. Current working-tree addresses are carried forward unchanged.
+# -----------------------------------------------------------------------------
+[[chains]]
+name = "arbitrum"
+chain_id = 42161
+enabled = true
+tier = 1
+rpc_url_env = "ARBITRUM_RPC_URL"
+poll_interval_ms = 3000
+rpc_max_attempts = 4
+rpc_retry_base_ms = 100
+rpc_retry_max_ms = 1500
+rpc_request_timeout_ms = 6000
+discovery_concurrency = 4
+discovery_probe_delay_ms = 25
+discovery_rpc_min_request_spacing_ms = 500
+discovery_rpc_max_attempts = 8
+discovery_rpc_retry_max_ms = 5000
+pool_cache_path = "data/scanner/pool_cache_arbitrum.json"
+opportunity_db_path = "data/scanner/opportunities_arbitrum.sqlite"
+pool_cache_ttl_hours = 24
+liquidity_refresh_blocks = 80
+flash_loan_premium_bps = 5.0
+# Model small routes as self-funded; above this cap the scanner applies the configured flash-premium assumption.
+self_funded_capital_usd = 200.0
+min_net_profit_usd = 1.0
+# L2 ordering/bidding differs from Ethereum; do not import the old 50% builder reserve.
+mev_bid_reserve_pct = 0.0
+
+
+# Cold-cache universe expansion. Standard V2/V3 factory creation events
+# discover neighboring routing tokens; all configured venues are then probed across
+# the retained pair graph. A fresh pool cache prevents repeating this work every run.
+[chains.universe_expansion]
+enabled = true
+lookback_blocks = 150000000
+log_chunk_blocks = 2000000
+min_log_chunk_blocks = 2000
+frontier_rounds = 2
+max_auto_tokens = 48
+max_event_pairs = 400
+max_logs_per_factory = 50000
+# Conservative routing policy: do not auto-enroll common lending/vault wrapper symbols.
+# Explicit seed tokens remain unchanged; extend this list if your policy requires it.
+auto_token_symbol_deny_prefixes = ["aArb", "aOpt", "aBas", "stata", "cUSDCv3", "cWETHv3"]
+
+[chains.fee_model]
+quality = "conservative_proxy"
+base_gas_units = 560000
+gas_units_per_extra_hop = 120000
+l1_data_fee_usd_proxy = 0.10
+operator_fee_usd_proxy = 0.00
+
+[[chains.tokens]]
+symbol = "WETH"
+address = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+decimals = 18
+wrapped_native = true
+[[chains.tokens]]
+symbol = "USDC"
+address = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "USDCe"
+address = "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "USDT"
+address = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "DAI"
+address = "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1"
+decimals = 18
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "WBTC"
+address = "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f"
+decimals = 8
+[[chains.tokens]]
+symbol = "LINK"
+address = "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4"
+decimals = 18
+[[chains.tokens]]
+symbol = "AAVE"
+address = "0xba5DdD1f9d7F570dc94a51479a000E3BCE967196"
+decimals = 18
+[[chains.tokens]]
+symbol = "ARB"
+address = "0x912CE59144191C1204E64559FE8253a0e49E6548"
+decimals = 18
+
+[[chains.dexes]]
+name = "UniswapV2"
+kind = "v2"
+factory = "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9"
+fee_bps = 30.0
+[[chains.dexes]]
+name = "SushiV2"
+kind = "v2"
+factory = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4"
+fee_bps = 30.0
+[[chains.dexes]]
+name = "UniswapV3"
+kind = "v3"
+factory = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+quoter_v2 = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
+tick_lens = "0xbfd8137f7d1516D3ea5cA83523914859ec47F573"
+fee_tiers = [100, 500, 3000, 10000]
+[[chains.dexes]]
+name = "PancakeV2"
+kind = "v2"
+factory = "0x02a84c1b3BBD7401a5f7fa98a384EBC70bB5749E"
+fee_bps = 25.0
+[[chains.dexes]]
+name = "PancakeV3"
+kind = "v3"
+factory = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
+quoter_v2 = "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997"
+tick_lens = "0x9a489505a00cE272eAa5e07Dba6491314CaE3796"
+fee_tiers = [100, 500, 2500, 10000]
+[[chains.dexes]]
+name = "CamelotV3"
+kind = "algebra"
+factory = "0x1a3c9B1d2F0529D97f2afC5136Cc23e58f1FD35B"
+quoter_v2 = "0x0Fc73040b26E9bC8514fA028D998E73A254Fa76E"
+
+# -----------------------------------------------------------------------------
+# Tier 1 — Base
+# Uni V3 + Pancake V3 + Aerodrome classic volatile/stable + Slipstream CL.
+# Stable pools use the Solidly stable marginal invariant and pool-level exact quotes.
+# Slipstream uses tick-spacing discovery, live factory swap fees, and the official
+# MixedRouteQuoterV3 factory-selection masks; it is NOT treated as canonical UniV3.
+# -----------------------------------------------------------------------------
+[[chains]]
+name = "base"
+chain_id = 8453
+enabled = true
+tier = 1
+rpc_url_env = "BASE_RPC_URL"
+poll_interval_ms = 3000
+rpc_max_attempts = 4
+rpc_retry_base_ms = 100
+rpc_retry_max_ms = 1500
+rpc_request_timeout_ms = 6000
+# Public Base RPC rejected short request bursts during smoke testing.
+# Pace individual requests instead of reducing route depth/quote breadth.
+rpc_min_request_spacing_ms = 350
+discovery_concurrency = 4
+discovery_probe_delay_ms = 25
+discovery_rpc_min_request_spacing_ms = 500
+discovery_rpc_max_attempts = 8
+discovery_rpc_retry_max_ms = 5000
+pool_cache_path = "data/scanner/pool_cache_base.json"
+opportunity_db_path = "data/scanner/opportunities_base.sqlite"
+pool_cache_ttl_hours = 24
+liquidity_refresh_blocks = 20
+flash_loan_premium_bps = 5.0
+# Model small routes as self-funded; above this cap the scanner applies the configured flash-premium assumption.
+self_funded_capital_usd = 200.0
+min_net_profit_usd = 1.0
+mev_bid_reserve_pct = 0.0
+
+
+# Cold-cache universe expansion. Standard V2/V3 factory creation events
+# discover neighboring routing tokens; all configured venues are then probed across
+# the retained pair graph. A fresh pool cache prevents repeating this work every run.
+[chains.universe_expansion]
+enabled = true
+lookback_blocks = 0
+log_chunk_blocks = 1000000
+min_log_chunk_blocks = 2000
+frontier_rounds = 2
+max_auto_tokens = 48
+max_event_pairs = 400
+max_logs_per_factory = 50000
+# Conservative routing policy: do not auto-enroll common lending/vault wrapper symbols.
+# Explicit seed tokens remain unchanged; extend this list if your policy requires it.
+auto_token_symbol_deny_prefixes = ["aArb", "aOpt", "aBas", "stata", "cUSDCv3", "cWETHv3"]
+
+[chains.fee_model]
+quality = "conservative_proxy"
+base_gas_units = 560000
+gas_units_per_extra_hop = 120000
+l1_data_fee_usd_proxy = 0.10
+operator_fee_usd_proxy = 0.02
+
+[[chains.tokens]]
+symbol = "WETH"
+address = "0x4200000000000000000000000000000000000006"
+decimals = 18
+wrapped_native = true
+[[chains.tokens]]
+symbol = "USDC"
+address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bda02913"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "cbBTC"
+address = "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf"
+decimals = 8
+[[chains.tokens]]
+symbol = "cbETH"
+address = "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22"
+decimals = 18
+[[chains.tokens]]
+symbol = "AERO"
+address = "0x940181a94A35A4569E4529A3CDfB74e38FD98631"
+decimals = 18
+
+[[chains.dexes]]
+name = "UniswapV3"
+kind = "v3"
+factory = "0x33128a8fC17869897dcE68Ed026d694621f6FDfD"
+quoter_v2 = "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
+tick_lens = "0x0CdeE061c75D43c82520eD998C23ac2991c9ac6d"
+fee_tiers = [100, 500, 3000, 10000]
+[[chains.dexes]]
+name = "PancakeV3"
+kind = "v3"
+factory = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
+quoter_v2 = "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997"
+tick_lens = "0x9a489505a00cE272eAa5e07Dba6491314CaE3796"
+fee_tiers = [100, 500, 2500, 10000]
+[[chains.dexes]]
+name = "AerodromeVolatile"
+kind = "solidly"
+factory = "0x420DD381b31aEf6683db6B902084cB0FFECe40Da"
+solidly_stable = false
+# Optimistic discovery fallback only; factory getFee(pool,false) is normally authoritative.
+fee_bps = 0.0
+[[chains.dexes]]
+name = "AerodromeStable"
+kind = "solidly"
+factory = "0x420DD381b31aEf6683db6B902084cB0FFECe40Da"
+solidly_stable = true
+fee_bps = 0.0
+
+# Current MixedRouteQuoterV3 supports three Base CL factories. The factory masks
+# below follow the official quoter contract: original=1<<20, newest=1<<19, second=raw.
+[[chains.dexes]]
+name = "AerodromeSlipstreamInitial"
+kind = "slipstream"
+factory = "0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A"
+quoter_v2 = "0xCd2A7D98e82D6107eac1828ce8DeAA6acB65b555"
+slipstream_factory_mask = 1048576
+[[chains.dexes]]
+name = "AerodromeSlipstreamGaugeCaps"
+kind = "slipstream"
+factory = "0xaDe65c38CD4849aDBA595a4323a8C7DdfE89716a"
+quoter_v2 = "0xCd2A7D98e82D6107eac1828ce8DeAA6acB65b555"
+slipstream_factory_mask = 0
+[[chains.dexes]]
+name = "AerodromeSlipstreamCurrent"
+kind = "slipstream"
+factory = "0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef"
+quoter_v2 = "0xCd2A7D98e82D6107eac1828ce8DeAA6acB65b555"
+slipstream_factory_mask = 524288
+
+# -----------------------------------------------------------------------------
+# Tier 2 — OP Mainnet
+# Uni V3 + Velodrome classic volatile/stable + Slipstream CL. As on Base,
+# Slipstream is kept as its own adapter and quoted through the official CL quoter.
+# -----------------------------------------------------------------------------
+[[chains]]
+name = "optimism"
+chain_id = 10
+enabled = true
+tier = 2
+rpc_url_env = "OPTIMISM_RPC_URL"
+poll_interval_ms = 5000
+rpc_max_attempts = 4
+rpc_retry_base_ms = 100
+rpc_retry_max_ms = 1500
+rpc_request_timeout_ms = 6000
+discovery_concurrency = 4
+discovery_probe_delay_ms = 25
+discovery_rpc_min_request_spacing_ms = 500
+discovery_rpc_max_attempts = 8
+discovery_rpc_retry_max_ms = 5000
+pool_cache_path = "data/scanner/pool_cache_optimism.json"
+opportunity_db_path = "data/scanner/opportunities_optimism.sqlite"
+pool_cache_ttl_hours = 24
+liquidity_refresh_blocks = 20
+flash_loan_premium_bps = 5.0
+# Model small routes as self-funded; above this cap the scanner applies the configured flash-premium assumption.
+self_funded_capital_usd = 200.0
+min_net_profit_usd = 1.0
+mev_bid_reserve_pct = 0.0
+
+
+# Cold-cache universe expansion. Standard V2/V3 factory creation events
+# discover neighboring routing tokens; all configured venues are then probed across
+# the retained pair graph. A fresh pool cache prevents repeating this work every run.
+[chains.universe_expansion]
+enabled = true
+lookback_blocks = 0
+log_chunk_blocks = 2000000
+min_log_chunk_blocks = 2000
+frontier_rounds = 2
+max_auto_tokens = 48
+max_event_pairs = 400
+max_logs_per_factory = 50000
+# Conservative routing policy: do not auto-enroll common lending/vault wrapper symbols.
+# Explicit seed tokens remain unchanged; extend this list if your policy requires it.
+auto_token_symbol_deny_prefixes = ["aArb", "aOpt", "aBas", "stata", "cUSDCv3", "cWETHv3"]
+
+[chains.fee_model]
+quality = "conservative_proxy"
+base_gas_units = 560000
+gas_units_per_extra_hop = 120000
+l1_data_fee_usd_proxy = 0.10
+operator_fee_usd_proxy = 0.02
+
+[[chains.tokens]]
+symbol = "WETH"
+address = "0x4200000000000000000000000000000000000006"
+decimals = 18
+wrapped_native = true
+[[chains.tokens]]
+symbol = "USDC"
+address = "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "USDCe"
+address = "0x7F5c764cBc14f9669B88837ca1490cCa17c31607"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "OP"
+address = "0x4200000000000000000000000000000000000042"
+decimals = 18
+[[chains.tokens]]
+symbol = "WBTC"
+address = "0x68f180fcCe6836688e9084f035309E29Bf0A2095"
+decimals = 8
+[[chains.tokens]]
+symbol = "USDT"
+address = "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"
+decimals = 6
+usd_price = 1.0
+
+[[chains.dexes]]
+name = "UniswapV3"
+kind = "v3"
+factory = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+quoter_v2 = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
+tick_lens = "0xbfd8137f7d1516D3ea5cA83523914859ec47F573"
+fee_tiers = [100, 500, 3000, 10000]
+[[chains.dexes]]
+name = "VelodromeVolatile"
+kind = "solidly"
+factory = "0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a"
+solidly_stable = false
+fee_bps = 0.0
+[[chains.dexes]]
+name = "VelodromeStable"
+kind = "solidly"
+factory = "0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a"
+solidly_stable = true
+fee_bps = 0.0
+
+# Original and newest official Slipstream factories are both covered by the current
+# MixedRouteQuoterV3. The unverified extra legacy-factory mapping is not guessed.
+[[chains.dexes]]
+name = "VelodromeSlipstreamInitial"
+kind = "slipstream"
+factory = "0xCc0bDDB707055e04e497aB22a59c2aF4391cd12F"
+quoter_v2 = "0xAf6EBdf4c70061C5961994Ae9c9956fBc2bCC32E"
+slipstream_factory_mask = 1048576
+[[chains.dexes]]
+name = "VelodromeSlipstreamCurrent"
+kind = "slipstream"
+factory = "0xe13Dd1fbA721Aa81a1826D9523AC9BC7d260c879"
+quoter_v2 = "0xAf6EBdf4c70061C5961994Ae9c9956fBc2bCC32E"
+slipstream_factory_mask = 524288
+
+# -----------------------------------------------------------------------------
+# Tier 3 — Scroll
+# Sushi cpAMM + the Scroll-documented Uniswap V3 deployment. This expands the
+# previously too-thin Scroll graph without guessing compatibility for native forks.
+# -----------------------------------------------------------------------------
+[[chains]]
+name = "scroll"
+chain_id = 534352
+enabled = false
+tier = 3
+rpc_url_env = "SCROLL_RPC_URL"
+poll_interval_ms = 10000
+rpc_max_attempts = 4
+rpc_retry_base_ms = 150
+rpc_retry_max_ms = 1800
+rpc_request_timeout_ms = 7000
+discovery_concurrency = 3
+discovery_probe_delay_ms = 35
+discovery_rpc_min_request_spacing_ms = 500
+discovery_rpc_max_attempts = 8
+discovery_rpc_retry_max_ms = 5000
+pool_cache_path = "data/scanner/pool_cache_scroll.json"
+opportunity_db_path = "data/scanner/opportunities_scroll.sqlite"
+pool_cache_ttl_hours = 24
+liquidity_refresh_blocks = 10
+# Scroll is a thin Tier-3 market; use a lower chain-local floor without weakening
+# the global 25k filter used by Base/Arbitrum/OP.
+min_pool_anchor_liquidity_usd = 2000.0
+flash_loan_premium_bps = 5.0
+# Model small routes as self-funded; above this cap the scanner applies the configured flash-premium assumption.
+self_funded_capital_usd = 200.0
+min_net_profit_usd = 1.0
+mev_bid_reserve_pct = 0.0
+
+
+[chains.universe_expansion]
+enabled = false
+
+[chains.fee_model]
+quality = "conservative_proxy"
+base_gas_units = 560000
+gas_units_per_extra_hop = 120000
+l1_data_fee_usd_proxy = 0.10
+operator_fee_usd_proxy = 0.00
+
+[[chains.tokens]]
+symbol = "WETH"
+address = "0x5300000000000000000000000000000000000004"
+decimals = 18
+wrapped_native = true
+[[chains.tokens]]
+symbol = "USDC"
+address = "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "USDT"
+address = "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "WBTC"
+address = "0x3C1BCa5a656e69edCD0D4E36BEbb3FcDAcA60Cf1"
+decimals = 8
+[[chains.tokens]]
+symbol = "DAI"
+address = "0xcA77eB3fEFe3725Dc33bccB54eDEFc3D9f764f97"
+decimals = 18
+usd_price = 1.0
+
+[[chains.dexes]]
+name = "SushiV2"
+kind = "v2"
+factory = "0xb45e53277a7e0f1d35f2a77160e91e25507f1763"
+fee_bps = 30.0
+# SyncSwap Classic V2.1: current official Scroll factory. Its pool-level
+# getAmountOut applies the live master fee during exact survivor verification.
+[[chains.dexes]]
+name = "SyncSwapClassicV21"
+kind = "v2"
+factory = "0xA757eD0812092E2a8F78e6642a2A3215995A4131"
+# Optimistic marginal upper bound only; exact quotes use the pool's live fee.
+fee_bps = 0.0
+syncswap_classic = true
+
+[[chains.dexes]]
+name = "UniswapV3"
+kind = "v3"
+factory = "0x70C62C8b8e801124A4Aa81ce07b637A3e83cb919"
+quoter_v2 = "0x2566e082Cb1656d22BCbe5644F5b997D194b5299"
+tick_lens = "0x85780e12e90D2a684eB8E7404c985b5B5c8ce7E9"
+fee_tiers = [100, 500, 3000, 10000]
+
+# -----------------------------------------------------------------------------
+# Tier 3 — Linea
+# Pancake V3 has an official Linea deployment and uses its own official periphery.
+# -----------------------------------------------------------------------------
+[[chains]]
+name = "linea"
+chain_id = 59144
+enabled = false
+tier = 3
+rpc_url_env = "LINEA_RPC_URL"
+poll_interval_ms = 10000
+rpc_max_attempts = 4
+rpc_retry_base_ms = 150
+rpc_retry_max_ms = 1800
+rpc_request_timeout_ms = 7000
+discovery_concurrency = 3
+discovery_probe_delay_ms = 35
+discovery_rpc_min_request_spacing_ms = 500
+discovery_rpc_max_attempts = 8
+discovery_rpc_retry_max_ms = 5000
+pool_cache_path = "data/scanner/pool_cache_linea.json"
+opportunity_db_path = "data/scanner/opportunities_linea.sqlite"
+pool_cache_ttl_hours = 24
+liquidity_refresh_blocks = 10
+flash_loan_premium_bps = 5.0
+# Model small routes as self-funded; above this cap the scanner applies the configured flash-premium assumption.
+self_funded_capital_usd = 200.0
+min_net_profit_usd = 1.0
+mev_bid_reserve_pct = 0.0
+
+
+[chains.universe_expansion]
+enabled = false
+
+[chains.fee_model]
+# Linea has a chain-specific fee estimator; this is intentionally only a proxy in V3.3.
+quality = "conservative_proxy"
+base_gas_units = 560000
+gas_units_per_extra_hop = 120000
+l1_data_fee_usd_proxy = 0.10
+operator_fee_usd_proxy = 0.02
+
+[[chains.tokens]]
+symbol = "WETH"
+address = "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f"
+decimals = 18
+wrapped_native = true
+[[chains.tokens]]
+symbol = "USDC"
+address = "0x176211869cA2b568f2A7D4EE941E073a821EE1ff"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "USDT"
+address = "0xA219439258ca9da29E9Cc4cE5596924745e12B93"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "WBTC"
+address = "0x3aAB2285ddcDdaD8edf438C1bAB47e1a9D05a9b4"
+decimals = 8
+[[chains.tokens]]
+symbol = "DAI"
+address = "0x4AF15ec2A0BD43Db75dd04E62FAA3B8EF36b00d5"
+decimals = 18
+usd_price = 1.0
+
+[[chains.dexes]]
+name = "PancakeV3"
+kind = "v3"
+factory = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
+quoter_v2 = "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997"
+tick_lens = "0x9a489505a00cE272eAa5e07Dba6491314CaE3796"
+fee_tiers = [100, 500, 2500, 10000]
+
+# -----------------------------------------------------------------------------
+# Tier 3 — zkSync Era
+# Official Uni V3 + zkSync-specific Pancake V3 deployments.
+# -----------------------------------------------------------------------------
+[[chains]]
+name = "zksync"
+chain_id = 324
+enabled = false
+tier = 3
+rpc_url_env = "ZKSYNC_RPC_URL"
+poll_interval_ms = 10000
+rpc_max_attempts = 4
+rpc_retry_base_ms = 150
+rpc_retry_max_ms = 1800
+rpc_request_timeout_ms = 7000
+discovery_concurrency = 3
+discovery_probe_delay_ms = 35
+discovery_rpc_min_request_spacing_ms = 500
+discovery_rpc_max_attempts = 8
+discovery_rpc_retry_max_ms = 5000
+pool_cache_path = "data/scanner/pool_cache_zksync.json"
+opportunity_db_path = "data/scanner/opportunities_zksync.sqlite"
+pool_cache_ttl_hours = 24
+liquidity_refresh_blocks = 10
+flash_loan_premium_bps = 5.0
+# Model small routes as self-funded; above this cap the scanner applies the configured flash-premium assumption.
+self_funded_capital_usd = 200.0
+min_net_profit_usd = 1.0
+mev_bid_reserve_pct = 0.0
+
+
+[chains.universe_expansion]
+enabled = false
+
+[chains.fee_model]
+quality = "conservative_proxy"
+base_gas_units = 560000
+gas_units_per_extra_hop = 120000
+l1_data_fee_usd_proxy = 0.10
+operator_fee_usd_proxy = 0.02
+
+[[chains.tokens]]
+symbol = "WETH"
+address = "0x5aea5775959fbc2557cc8789bc1bf90a239d9a91"
+decimals = 18
+wrapped_native = true
+[[chains.tokens]]
+symbol = "USDCe"
+address = "0x3355df6D4c9C3035724Fd0e3914dE96A5a83aaf4"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "USDT"
+address = "0x493257fD37EDB34451f62EDf8D2a0C418852bA4C"
+decimals = 6
+usd_price = 1.0
+[[chains.tokens]]
+symbol = "WBTC"
+address = "0xBBeB516fb02a01611cBBE0453Fe3c580D7281011"
+decimals = 8
+
+[[chains.dexes]]
+name = "UniswapV3"
+kind = "v3"
+factory = "0x8FdA5a7a8dCA67BBcDd10F02Fa0649A937215422"
+quoter_v2 = "0x8Cb537fc92E26d8EBBb760E632c95484b6Ea3e28"
+tick_lens = "0xe10FF11b809f8EE07b056B452c3B2caa7FE24f89"
+fee_tiers = [100, 500, 3000, 10000]
+[[chains.dexes]]
+name = "PancakeV3"
+kind = "v3"
+factory = "0x1BB72E0CbbEA93c08f535fc7856E0338D7F7a8aB"
+quoter_v2 = "0x3d146FcE6c1006857750cBe8aF44f76a28041CCc"
+tick_lens = "0x7b08978FA77910f77d273c353C62b5BFB9E6D17B"
+fee_tiers = [100, 500, 2500, 10000]

@@ -1,0 +1,22 @@
+# Secrets / local overrides
+.env
+.env.*
+!.env.example
+
+# Runtime state and evidence
+/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+
+# Rust / tooling
+target/
+.vs/
+.vscode/
+.idea/
+*.pdb
+
+# OS
+.DS_Store
+Thumbs.db
